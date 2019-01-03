@@ -1,0 +1,5 @@
+#!/bin/bash
+
+#./tcp_233 > game.log 2>&1
+./tcp_233 
+#valgrind -v --leak-check=full --gen-suppressions=all --log-file=valgrind.log ./tcp_233
