@@ -11,15 +11,18 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <list>
 #include <set>
 #include "key_in_c"
 
 using namespace std;
 
 bool is_server = false; 
-bool is_encrypt = false;
+bool is_encrypt = false; //越过 GFW
+bool extra_send = false; //用于降低丢包率
 
 #define MAX_HASH 8
+#define EXTRA_SEND_COUNT 2
 
 inline unsigned int DJBHash(const std::string& data)
 {
@@ -47,7 +50,7 @@ inline void EncryptStr(std::string &data)
 	
 	unsigned char *p = (unsigned char*)data.data();
 	unsigned j = 0;
-	for(size_t i=0; i<data.size(); i++)
+	for(size_t i=0; i<data.size(); ++i)
 	{
 		if(j >= __1_len) j = 0;
 		p[i] = p[i]^__1[j++];	
@@ -59,7 +62,7 @@ inline bool DecryptStr(std::string &data)
 	if(data.length() < MAX_HASH) return false;
 	unsigned char *p = (unsigned char*)data.data();
 	unsigned j = 0;
-	for(size_t i=0; i<data.size(); i++)
+	for(size_t i=0; i<data.size(); ++i)
 	{
 		if(j >= __1_len) j = 0;
 		p[i] = p[i]^__1[j++];	
@@ -104,6 +107,7 @@ class Link
 
 	int _to_svr_lost_remain;
 	int _to_cli_lost_remain;
+
 
 public:
 	Link(int64_t now_ms, const sockaddr_in& cli_addr, int to_svr_fd, int to_svr_delay_ms_min, int to_svr_delay_ms_max, int to_cli_delay_ms_min,
@@ -166,6 +170,7 @@ public:
 	void OnReceiveData(int64_t now_ms, bool to_svr, /*const*/ string& data)
 	{
 		_last_receive_data_time_ms = now_ms;
+		//fprintf(stderr, "OnReceiveData, now_ms=%ld, data.size()=%lu to_svr=%d\n", now_ms, data.size(), to_svr);
 
 		if(to_svr)
 		{
@@ -202,6 +207,13 @@ public:
 			if(n>0) n=rand()%n;
 			int64_t t = now_ms+_to_svr_delay_ms_min+n;
 			_to_svr_buffer.insert(make_pair(t, data));
+			if(extra_send && !is_server) 
+			{
+				for(int i = 0;i < EXTRA_SEND_COUNT; ++i)
+				{
+					_to_svr_buffer.insert(make_pair(t+10+i*10, data));
+				}
+			}
 		}
 		else
 		{
@@ -237,6 +249,13 @@ public:
 			if(n>0) n=rand()%n;
 			int64_t t = now_ms+_to_cli_delay_ms_min+n;
 			_to_cli_buffer.insert(make_pair(t, data));
+			if(extra_send && is_server) 
+			{
+				for(int i = 0;i < EXTRA_SEND_COUNT; ++i)
+				{
+					_to_cli_buffer.insert(make_pair(t+10+i*10, data));
+				}
+			}
 		}
 	}
 };
@@ -430,6 +449,10 @@ int main(int argc, char *argv[])
 				{
 					is_encrypt = atoi(value.c_str());
 				}
+				else if(key == "extra_send")
+				{
+					extra_send = atoi(value.c_str());
+				}
 			}
 		}
 	}
@@ -442,7 +465,7 @@ int main(int argc, char *argv[])
 	//fprintf(stderr, "EncryptStr, %s\n", tmp.c_str());
 	//DecryptStr(tmp);
 	//fprintf(stderr, "DecryptStr, %s\n", tmp.c_str());
-	
+
 	//socket
     int to_cli_fd = socket(AF_INET, SOCK_DGRAM, 0); //接收客户端来的数据
     if(to_cli_fd == -1)
