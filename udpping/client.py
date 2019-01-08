@@ -11,8 +11,19 @@ BUFSIZE = 1024
 ADDR = (HOST, PORT)
 TIMEOUT = 1
 
+# TODO:
+rtt_min = 0.0
+rtt_max = 0.0
+rtt_avg = 0.0
+rtt_mdev = 0.0
+
+# --- 127.0.0.1 ping statistics ---
+# 7 packets transmitted, 7 received, 0% packet loss, time 6001ms
+# rtt min/avg/max/mdev = 0.019/0.030/0.043/0.010 ms
+
 udpCliSock = socket(AF_INET, SOCK_DGRAM)
 udpCliSock.settimeout(TIMEOUT)
+
 
 for i in range(0, 100):
 	#data = input('> ')
@@ -29,7 +40,7 @@ for i in range(0, 100):
 		#if data:
 		#	print('Response: ', data)
 		delay_time_ms = end_time_ms - begin_time_ms
-		print(str(len(data)) + " bytes from " + HOST + ": time=" + str(delay_time_ms) + " ms")
+		print(str(len(data)) + " bytes from " + HOST + ": i=" + str(i) +", time=" + str(delay_time_ms) + " ms")
 	except Exception as e:
 		print(e)
 		#print('Request timed out')
