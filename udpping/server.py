@@ -5,7 +5,7 @@ import random
 from socket import *
 
 HOST = ''
-PORT = 12001
+PORT = 11193
 BUFSIZE = 1024
 ADDR = (HOST, PORT)
 

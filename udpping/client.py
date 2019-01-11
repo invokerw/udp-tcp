@@ -6,7 +6,7 @@ import random
 import string
 
 HOST = '127.0.0.1'
-PORT = 12001
+PORT = 11195
 BUFSIZE = 1024
 ADDR = (HOST, PORT)
 TIMEOUT = 1
