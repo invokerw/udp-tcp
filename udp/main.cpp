@@ -50,7 +50,7 @@ inline void EncryptStr(std::string &data)
 		data.push_back((char)tmp[i]);
 	}
 	//fprintf(stderr, "%u %u %u %u\n", tmp[0], tmp[1], tmp[2], tmp[3]);
-	
+
 	unsigned char *p = (unsigned char*)data.data();
 	unsigned j = 0;
 	for(size_t i=0; i<data.size(); ++i)
@@ -85,7 +85,7 @@ inline bool DecryptStr(std::string &data)
 	}
 
 	data.resize(data.length()-MAX_HASH);
-	
+
 	return true;
 }
 
@@ -146,11 +146,11 @@ class Link
 
 public:
 	Link(int64_t now_ms, const sockaddr_in& cli_addr, int to_svr_fd, int to_svr_delay_ms_min, int to_svr_delay_ms_max, int to_cli_delay_ms_min,
-	     int to_cli_delay_ms_max, int to_svr_lost_packet_percent, int to_cli_lost_packet_percent, int close_period_ms)
-	    : _to_svr_delay_ms_min(to_svr_delay_ms_min), _to_svr_delay_ms_max(to_svr_delay_ms_max), _to_cli_delay_ms_min(to_cli_delay_ms_min),
-	      _to_cli_delay_ms_max(to_cli_delay_ms_max), _to_svr_lost_packet_percent(to_svr_lost_packet_percent), 
-	      _to_cli_lost_packet_percent(to_cli_lost_packet_percent), _close_period_ms(close_period_ms), _to_svr_fd(to_svr_fd), _last_receive_data_time_ms(now_ms),
-	      _to_svr_lost_remain(0), _to_cli_lost_remain(0), _packet_id_index(0)
+			int to_cli_delay_ms_max, int to_svr_lost_packet_percent, int to_cli_lost_packet_percent, int close_period_ms)
+		: _to_svr_delay_ms_min(to_svr_delay_ms_min), _to_svr_delay_ms_max(to_svr_delay_ms_max), _to_cli_delay_ms_min(to_cli_delay_ms_min),
+		_to_cli_delay_ms_max(to_cli_delay_ms_max), _to_svr_lost_packet_percent(to_svr_lost_packet_percent), 
+		_to_cli_lost_packet_percent(to_cli_lost_packet_percent), _close_period_ms(close_period_ms), _to_svr_fd(to_svr_fd), _last_receive_data_time_ms(now_ms),
+		_to_svr_lost_remain(0), _to_cli_lost_remain(0), _packet_id_index(0)
 	{
 		_cli_addr_len = sizeof(_cli_addr);
 		memcpy(&_cli_addr, &cli_addr, _cli_addr_len);
@@ -168,35 +168,35 @@ public:
 		if(now_ms-_last_receive_data_time_ms > _close_period_ms) return false;
 
 		{
-		auto it=_to_svr_buffer.begin();
-		while(it!=_to_svr_buffer.end())
-		{
-			int64_t t = it->first;
-			if(t > now_ms) break;
+			auto it=_to_svr_buffer.begin();
+			while(it!=_to_svr_buffer.end())
+			{
+				int64_t t = it->first;
+				if(t > now_ms) break;
 
-			const string& data = it->second;
-			sendto(_to_svr_fd, data.c_str(), data.size(), 0, svr_addr, svr_addr_len);
+				const string& data = it->second;
+				sendto(_to_svr_fd, data.c_str(), data.size(), 0, svr_addr, svr_addr_len);
 
-			_to_svr_buffer.erase(it);
+				_to_svr_buffer.erase(it);
 
-			it = _to_svr_buffer.begin();
+				it = _to_svr_buffer.begin();
+			}
 		}
-		}
 
 		{
-		auto it=_to_cli_buffer.begin();
-		while(it!=_to_cli_buffer.end())
-		{
-			int64_t t = it->first;
-			if(t > now_ms) break;
+			auto it=_to_cli_buffer.begin();
+			while(it!=_to_cli_buffer.end())
+			{
+				int64_t t = it->first;
+				if(t > now_ms) break;
 
-			const string& data = it->second;
-			sendto(to_cli_fd, data.c_str(), data.size(), 0, (const sockaddr*)&_cli_addr, _cli_addr_len);
+				const string& data = it->second;
+				sendto(to_cli_fd, data.c_str(), data.size(), 0, (const sockaddr*)&_cli_addr, _cli_addr_len);
 
-			_to_cli_buffer.erase(it);
+				_to_cli_buffer.erase(it);
 
-			it = _to_cli_buffer.begin();
-		}
+				it = _to_cli_buffer.begin();
+			}
 		}
 
 		return true;
@@ -422,11 +422,11 @@ public:
 	}
 
 	Link* CreateLink(int64_t now_ms, const sockaddr_in& cli_addr, int to_svr_fd, int to_svr_delay_ms_min, int to_svr_delay_ms_max,
-	                 int to_cli_delay_ms_min, int to_cli_delay_ms_max, int to_svr_lost_packet_percent, int to_cli_lost_packet_percent,
-	                 int close_period_ms)
+			int to_cli_delay_ms_min, int to_cli_delay_ms_max, int to_svr_lost_packet_percent, int to_cli_lost_packet_percent,
+			int close_period_ms)
 	{
 		Link *link = new Link(now_ms, cli_addr, to_svr_fd, to_svr_delay_ms_min, to_svr_delay_ms_max, to_cli_delay_ms_min, to_cli_delay_ms_max,
-		                      to_svr_lost_packet_percent, to_cli_lost_packet_percent, close_period_ms);
+				to_svr_lost_packet_percent, to_cli_lost_packet_percent, close_period_ms);
 		_cli_addr_2_link[ConvertAddr2Str(cli_addr)] = link;
 		_to_svr_fd_2_link[to_svr_fd] = link;
 		_to_svr_fds.insert(to_svr_fd);
@@ -450,21 +450,21 @@ private:
 
 void SetNonBlock(int fd, bool non_block)
 {
-        int f = fcntl(fd, F_GETFL);
-        if (non_block) {
-                // non-block
-                if (f & O_NONBLOCK)
-                        return;
-                else
-                        f |= O_NONBLOCK;
-        } else {
-                // block
-                if (f & O_NONBLOCK)
-                        f &= ~O_NONBLOCK;
-                else
-                        return;
-        }   
-        fcntl(fd, F_SETFL, f);
+	int f = fcntl(fd, F_GETFL);
+	if (non_block) {
+		// non-block
+		if (f & O_NONBLOCK)
+			return;
+		else
+			f |= O_NONBLOCK;
+	} else {
+		// block
+		if (f & O_NONBLOCK)
+			f &= ~O_NONBLOCK;
+		else
+			return;
+	}   
+	fcntl(fd, F_SETFL, f);
 }
 
 int main(int argc, char *argv[])
@@ -566,34 +566,34 @@ int main(int argc, char *argv[])
 	fclose(fp);
 
 	srand(time(0));
-	
+
 	//std::string tmp = "WEIFEI";
 	//EncryptStr(tmp);
 	//fprintf(stderr, "EncryptStr, %s\n", tmp.c_str());
 	//DecryptStr(tmp);
 	//fprintf(stderr, "DecryptStr, %s\n", tmp.c_str());
-	
+
 	//std::string index_str = SetIndex(325210000);
 	//fprintf(stderr, "GetIndex, %d\n", GetIndex(index_str));
 	//exit(0);
 
 	//socket
-    int to_cli_fd = socket(AF_INET, SOCK_DGRAM, 0); //接收客户端来的数据
-    if(to_cli_fd == -1)
+	int to_cli_fd = socket(AF_INET, SOCK_DGRAM, 0); //接收客户端来的数据
+	if(to_cli_fd == -1)
 	{
 		fprintf(stderr, "socket(to_cli_fd) error\n");
 		return -1;
 	}
 	//noblock
 	SetNonBlock(to_cli_fd, true);
-    
+
 	//bind
-    sockaddr_in listen_addr;
-    memset(&listen_addr, 0, sizeof(listen_addr));
-    listen_addr.sin_family = AF_INET;
-    listen_addr.sin_addr.s_addr = inet_addr("0.0.0.0");
-    listen_addr.sin_port = htons(listen_port);
-    if(bind(to_cli_fd, (sockaddr*)&listen_addr, sizeof(listen_addr)) == -1) 
+	sockaddr_in listen_addr;
+	memset(&listen_addr, 0, sizeof(listen_addr));
+	listen_addr.sin_family = AF_INET;
+	listen_addr.sin_addr.s_addr = inet_addr("0.0.0.0");
+	listen_addr.sin_port = htons(listen_port);
+	if(bind(to_cli_fd, (sockaddr*)&listen_addr, sizeof(listen_addr)) == -1) 
 	{
 		fprintf(stderr, "bind(to_cli_fd) error\n");
 		return -1;
@@ -602,9 +602,9 @@ int main(int argc, char *argv[])
 	//to_svr addr
 	sockaddr_in to_svr_addr;
 	memset(&to_svr_addr, 0, sizeof(to_svr_addr));
-    to_svr_addr.sin_family = AF_INET;
-    to_svr_addr.sin_addr.s_addr = inet_addr(to_svr_ip.c_str());
-    to_svr_addr.sin_port = htons(to_svr_port);
+	to_svr_addr.sin_family = AF_INET;
+	to_svr_addr.sin_addr.s_addr = inet_addr(to_svr_ip.c_str());
+	to_svr_addr.sin_port = htons(to_svr_port);
 
 	//loop
 	while(true)
@@ -664,10 +664,10 @@ int main(int argc, char *argv[])
 							int to_svr_fd = socket(AF_INET, SOCK_DGRAM, 0);
 							SetNonBlock(to_svr_fd, true);
 							link = LinkManager::GetInstance().CreateLink(now_ms, src_addr, to_svr_fd,
-							                                             to_svr_delay_ms_min, to_svr_delay_ms_max,
-							                                             to_cli_delay_ms_min, to_cli_delay_ms_max,
-							                                             to_svr_lost_packet_percent, to_cli_lost_packet_percent,
-							                                             close_period_ms);
+									to_svr_delay_ms_min, to_svr_delay_ms_max,
+									to_cli_delay_ms_min, to_cli_delay_ms_max,
+									to_svr_lost_packet_percent, to_cli_lost_packet_percent,
+									close_period_ms);
 						}
 						link->OnReceiveData(now_ms, true, data);
 					}
@@ -683,7 +683,7 @@ int main(int argc, char *argv[])
 				}
 			}
 		}
-		
+
 		LinkManager::GetInstance().Update(now_ms, to_cli_fd, (const sockaddr*)&to_svr_addr, sizeof(to_svr_addr));
 	}
 
