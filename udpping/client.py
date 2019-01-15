@@ -24,6 +24,7 @@ rtt_mdev = 0.0
 udpCliSock = socket(AF_INET, SOCK_DGRAM)
 udpCliSock.settimeout(TIMEOUT)
 
+#ip = socket.gethostbyname("www.baidu.com")
 
 for i in range(0, 100):
 	#data = input('> ')
