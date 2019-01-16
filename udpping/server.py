@@ -12,10 +12,11 @@ ADDR = (HOST, PORT)
 udpSerSock = socket(AF_INET, SOCK_DGRAM)
 udpSerSock.bind(ADDR)
 
+print('wating for connection...')
+
 while True:
-	print('wating for connection...')
 	data, addr = udpSerSock.recvfrom(BUFSIZE)
-	print(addr)
+	print(str(addr)+" : "+data)
 	data = data.upper()
 	udpSerSock.sendto(data, addr)
 
