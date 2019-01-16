@@ -19,10 +19,15 @@ udp_client 中加入 delay_limit 参数为可以容忍的最高延迟
 
 
 client   <-->   			       			  <-->	  server
+
 client   <-->   			      			  <-->	  server
+
 client   <-->   udp client  <-->  udp server  <-->    server
+
 client   <-->   			     			  <-->    server
+
 client   <-->   				  			  <-->    server
+
 
 
 
