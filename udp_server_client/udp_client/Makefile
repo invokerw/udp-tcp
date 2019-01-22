@@ -1,6 +1,6 @@
 CXX=g++ -m64
 CXXFLAGS=-g -Wall -std=c++0x
-INCLUDES=
+INCLUDES= -I. -I../
 LD=g++ -m64
 LDFLAGS=-std=c++0x
 DASM=objdump

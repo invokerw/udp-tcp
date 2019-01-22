@@ -1,276 +1,22 @@
-#include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
 #include <sys/socket.h>
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
-#include <sys/time.h>
-#include <string>
+#include <string.h>
 #include <vector>
 #include <map>
 #include <list>
 #include <set>
-#include "key_in_c"
+#include "common.h"
+#include "link.h"
 
 using namespace std;
 
 bool is_server = false; 
 bool is_encrypt = false; //越过 GFW
 bool extra_send = false; //用于降低丢包率
-
-#define MAX_HASH 4
-#define EXTRA_SEND_COUNT 4
-#define INDEX_SAVE_BYTE 4
-#define LINK_COUNT 1
-
-inline int64_t NowMS()
-{
-	timeval tv;
-	gettimeofday(&tv, 0);
-	int64_t now_ms = tv.tv_sec*(int64_t)1000+tv.tv_usec/1000;
-	return now_ms;
-}
-
-inline unsigned int DJBHash(const std::string& data)
-{
-	unsigned int hash = 5381;
-	const unsigned char *p = (const unsigned char*)data.data();
-	for(size_t i=0; i<data.size(); i++)
-	{
-		hash += (hash << 5) + p[i];
-	}
-	return (hash&0x7fffffff);
-}
-
-inline void EncryptStr(std::string &data)
-{
-	unsigned char tmp[MAX_HASH];
-	unsigned int hash = DJBHash(data);
-	//fprintf(stderr, "EncryptStr, %u, len=%lu\n", hash, data.length());
-	for(int i = 0;i < MAX_HASH; ++i)
-	{
-		tmp[i] = hash%256;
-		hash = hash/256;
-		data.push_back((char)tmp[i]);
-	}
-	//fprintf(stderr, "%u %u %u %u\n", tmp[0], tmp[1], tmp[2], tmp[3]);
-
-	unsigned char *p = (unsigned char*)data.data();
-	unsigned j = 0;
-	for(size_t i=0; i<data.size(); ++i)
-	{
-		if(j >= __1_len) j = 0;
-		p[i] = p[i]^__1[j++];	
-	}
-}
-
-inline bool DecryptStr(std::string &data)
-{
-	if(data.length() < MAX_HASH) return false;
-	unsigned char *p = (unsigned char*)data.data();
-	unsigned j = 0;
-	for(size_t i=0; i<data.size(); ++i)
-	{
-		if(j >= __1_len) j = 0;
-		p[i] = p[i]^__1[j++];	
-	}
-
-	unsigned int hash = DJBHash(std::string(data, 0, data.size()-MAX_HASH));
-	//fprintf(stderr, "DecryptStr, %u, len=%lu\n", hash, data.length());
-
-	//fprintf(stderr, "%u %u %u %u\n", (unsigned char)data[data.length()-1-3], (unsigned char)data[data.length()-1-2], (unsigned char)data[data.length()-1-1], (unsigned char)data[data.length()-1-0]);
-
-	for(int i = 0;i < MAX_HASH; ++i)
-	{
-		unsigned int key = hash%256;
-		//fprintf(stderr, "DecryptStr, key=%u, data[%d]=%u\n", key, (int)(data.length()-MAX_HASH+i), (unsigned char)data[data.length()-MAX_HASH+i]);
-		if((unsigned int)(unsigned char)data[data.length()-MAX_HASH+i] != key) return false;
-		hash = hash/256;
-	}
-
-	data.resize(data.length()-MAX_HASH);
-
-	return true;
-}
-
-inline int GetIndex(std::string &data)
-{
-	if(data.length() != INDEX_SAVE_BYTE) return -1;
-	//fprintf(stderr, "GetIndex, data len=%lu\n", data.length());
-	int index = 0;
-	for(int i=data.size()-1; i>=0; --i)
-	{
-		//fprintf(stderr, "GetIndex, data[%u]=%d\n", i, (int)(unsigned char)data[i]);
-		index = index*256+ (int)(unsigned char)data[i];
-	}
-	//fprintf(stderr, "GetIndex, index=%d\n", index);
-	return index;
-}
-
-inline std::string SetIndex(int index)
-{
-	std::string data;
-	//fprintf(stderr, "SetIndex, index=%d\n", index);
-	for(int i = 0;i < INDEX_SAVE_BYTE; ++i)
-	{
-		unsigned char tmp = (unsigned char)(index%256);
-		index = index/256;
-		//fprintf(stderr, "SetIndex, data[%u]=%u\n", i, (unsigned int)tmp);
-		data.push_back((char)tmp);
-	}
-	return data;
-}
-
-//only for UDP
-class Link
-{
-	int _to_svr_delay_ms_min;
-	int _to_svr_delay_ms_max;
-	int _to_cli_delay_ms_min;
-	int _to_cli_delay_ms_max;
-	int _to_svr_lost_packet_percent;
-	int _to_cli_lost_packet_percent;
-	int _close_period_ms;
-
-	sockaddr_in _cli_addr;
-	socklen_t _cli_addr_len;
-	int _to_svr_fd;
-
-	multimap<int64_t, string> _to_svr_buffer; //time(ms)=>data
-	multimap<int64_t, string> _to_cli_buffer;
-
-	int64_t _last_receive_data_time_ms;
-
-	int _to_svr_lost_remain;
-	int _to_cli_lost_remain;
-
-	int _id;
-
-
-public:
-	Link(int64_t now_ms, const sockaddr_in& cli_addr, int to_svr_fd, int to_svr_delay_ms_min, int to_svr_delay_ms_max, int to_cli_delay_ms_min,
-	     int to_cli_delay_ms_max, int to_svr_lost_packet_percent, int to_cli_lost_packet_percent, int close_period_ms, int id)
-	    : _to_svr_delay_ms_min(to_svr_delay_ms_min), _to_svr_delay_ms_max(to_svr_delay_ms_max), _to_cli_delay_ms_min(to_cli_delay_ms_min),
-	      _to_cli_delay_ms_max(to_cli_delay_ms_max), _to_svr_lost_packet_percent(to_svr_lost_packet_percent), 
-	      _to_cli_lost_packet_percent(to_cli_lost_packet_percent), _close_period_ms(close_period_ms), _to_svr_fd(to_svr_fd), _last_receive_data_time_ms(now_ms),
-	      _to_svr_lost_remain(0), _to_cli_lost_remain(0), _id(id)
-	{
-		_cli_addr_len = sizeof(_cli_addr);
-		memcpy(&_cli_addr, &cli_addr, _cli_addr_len);
-	}
-	~Link()
-	{
-		//client 端不需要关闭这个唯一一条连接
-		//close(_to_svr_fd);
-	}
-	
-	const sockaddr_in& GetCliAddr() const { return _cli_addr; }
-	int GetToSvrFd() const { return _to_svr_fd; }
-	int GetId() const { return _id;}
-
-	bool Update(int64_t now_ms, int to_cli_fd, const struct sockaddr *svr_addr, socklen_t svr_addr_len)
-	{
-		if(now_ms-_last_receive_data_time_ms > _close_period_ms) return false;
-
-		{
-		auto it=_to_svr_buffer.begin();
-		while(it!=_to_svr_buffer.end())
-		{
-			int64_t t = it->first;
-			if(t > now_ms) break;
-
-			const string& data = it->second;
-			sendto(_to_svr_fd, data.c_str(), data.size(), 0, svr_addr, svr_addr_len);
-
-			_to_svr_buffer.erase(it);
-
-			it = _to_svr_buffer.begin();
-		}
-		}
-
-		{
-		auto it=_to_cli_buffer.begin();
-		while(it!=_to_cli_buffer.end())
-		{
-			int64_t t = it->first;
-			if(t > now_ms) break;
-
-			const string& data = it->second;
-			sendto(to_cli_fd, data.c_str(), data.size(), 0, (const sockaddr*)&_cli_addr, _cli_addr_len);
-
-			_to_cli_buffer.erase(it);
-
-			it = _to_cli_buffer.begin();
-		}
-		}
-
-		return true;
-	}
-
-	void OnReceiveData(int64_t now_ms, bool to_svr, /*const*/ string& data)
-	{
-		_last_receive_data_time_ms = now_ms;
-		fprintf(stderr, "OnReceiveData, now_ms=%ld, data.size()=%lu, to_svr=%d, id=%d\n", now_ms, data.size(), to_svr, GetId());
-
-		if(to_svr)
-		{
-			if(_to_svr_lost_remain > 0)
-			{
-				_to_svr_lost_remain--;
-				//fprintf(stderr, "to server lost\n");
-				return; //lost
-			}
-			if(_to_svr_lost_packet_percent>0 && (rand()%10000)<_to_svr_lost_packet_percent)
-			{
-				_to_svr_lost_remain = 10;
-				fprintf(stderr, "to server lost\n");
-				return; //lost
-			}
-
-			int n = _to_svr_delay_ms_max-_to_svr_delay_ms_min;
-			if(n>0) n=rand()%n;
-			int64_t t = now_ms+_to_svr_delay_ms_min+n;
-			_to_svr_buffer.insert(make_pair(t, data));
-			if(extra_send && !is_server) 
-			{
-				for(int i = 0;i < EXTRA_SEND_COUNT; ++i)
-				{
-					_to_svr_buffer.insert(make_pair(t+10+i*10, data));
-				}
-			}
-		}
-		else
-		{
-			if(_to_cli_lost_remain > 0)
-			{
-				_to_cli_lost_remain--;
-				//fprintf(stderr, "to client lost\n");
-				return; //lost
-			}
-			if(_to_cli_lost_packet_percent>0 && (rand()%10000)<_to_cli_lost_packet_percent)
-			{
-				_to_cli_lost_remain = 10;
-				fprintf(stderr, "to client lost\n");
-				return; //lost
-			}
-
-			int n = _to_cli_delay_ms_max-_to_cli_delay_ms_min;
-			if(n>0) n=rand()%n;
-			int64_t t = now_ms+_to_cli_delay_ms_min+n;
-			_to_cli_buffer.insert(make_pair(t, data));
-			if(extra_send && is_server) 
-			{
-				for(int i = 0;i < EXTRA_SEND_COUNT; ++i)
-				{
-					_to_cli_buffer.insert(make_pair(t+10+i*10, data));
-				}
-			}
-		}
-	}
-};
 
 class LinkManager
 {
@@ -343,7 +89,7 @@ public:
 	                 int close_period_ms)
 	{
 		Link *link = new Link(now_ms, cli_addr, to_svr_fd, to_svr_delay_ms_min, to_svr_delay_ms_max, to_cli_delay_ms_min, to_cli_delay_ms_max,
-		                      to_svr_lost_packet_percent, to_cli_lost_packet_percent, close_period_ms, _id_stub++);
+		                      to_svr_lost_packet_percent, to_cli_lost_packet_percent, close_period_ms, _id_stub++, is_server, extra_send, EXTRA_SEND_COUNT);
 		_cli_addr_2_link[ConvertAddr2Str(cli_addr)] = link;
 		//_to_svr_fd_2_link[to_svr_fd] = link;
 		_to_svr_fds.insert(to_svr_fd);
@@ -370,21 +116,20 @@ private:
 
 void SetNonBlock(int fd, bool non_block)
 {
-        int f = fcntl(fd, F_GETFL);
-        if (non_block) {
-                // non-block
-                if (f & O_NONBLOCK)
-                        return;
-                else
-                        f |= O_NONBLOCK;
-        } else {
-                // block
-                if (f & O_NONBLOCK)
-                        f &= ~O_NONBLOCK;
-                else
-                        return;
-        }   
-        fcntl(fd, F_SETFL, f);
+	int f = fcntl(fd, F_GETFL);
+	if (non_block) 
+	{
+		// non-block
+		if(f & O_NONBLOCK) return;
+		else f |= O_NONBLOCK;
+	} 
+	else 
+	{
+		// block
+		if(f & O_NONBLOCK) f &= ~O_NONBLOCK;
+		else return;
+	}   
+	fcntl(fd, F_SETFL, f);
 }
 
 int main(int argc, char *argv[])
@@ -405,10 +150,10 @@ int main(int argc, char *argv[])
 	int64_t last_heartbeat_time_ms = 0;
 
 	//read conf
-	FILE *fp = fopen("./udp_delay.conf", "r");
+	FILE *fp = fopen("./udp_client.conf", "r");
 	if(!fp)
 	{
-		fprintf(stderr, "fopen(\"udp_delay.conf\") error\n");
+		fprintf(stderr, "fopen(\"udp_client.conf\") error\n");
 		return -1;
 	}
 	char buf[1024];
@@ -516,10 +261,11 @@ int main(int argc, char *argv[])
 	
 
 	int to_svr_fd = socket(AF_INET, SOCK_DGRAM, 0);
-	//TODO: 测试延迟 超过延迟退出
 	SetNonBlock(to_svr_fd, true);
 	
+	//测试延迟 超过延迟退出
 	int count = 0;
+	int find_count = 0;
 	int64_t delay_ms = 0;
 	while(true)
 	{
@@ -555,6 +301,7 @@ int main(int argc, char *argv[])
 			FD_ZERO(&rset); //do clear
 		}
 		}
+
 		if(FD_ISSET(to_svr_fd, &rset))
 		{
 			char buf[1024*100];
@@ -571,28 +318,42 @@ int main(int argc, char *argv[])
 				}
 				//get id
 				if((int)data.size() < INDEX_SAVE_BYTE) continue;
-				std::string id_str = data.substr(data.size()-INDEX_SAVE_BYTE, INDEX_SAVE_BYTE);
-				int id = GetIndex(id_str);
+				//std::string id_str = data.substr(data.size()-INDEX_SAVE_BYTE, INDEX_SAVE_BYTE);
+				//int id = GetIndex(id_str);
 				data.resize(data.length()-INDEX_SAVE_BYTE);
 				int64_t begin_time = strtoll(data.c_str(), 0, 10);
 				int64_t end_time = NowMS();
 				delay_ms += end_time - begin_time;
 				last_heartbeat_time_ms = end_time;
-				fprintf(stderr, "HeartBeat, data.size()=%lu, data=%s, id=%d, begin_time=%ld, end_time=%ld, delay=%ld\n", data.size(), data.c_str(), id, begin_time, end_time, end_time-begin_time);
+				//fprintf(stderr, "HeartBeat, data.size()=%lu, data=%s, id=%d, begin_time=%ld, end_time=%ld, delay=%ld\n", data.size(), data.c_str(), id, begin_time, end_time, end_time-begin_time);
 				++count;
 			}
 		}
-		if(count > 10) 
+		if(count!=0 && count%10==0) 
 		{
 			delay_ms = delay_ms/count;
-			break;
+			find_count = find_count + 1;
+			fprintf(stderr, "avg delay time=%ld, to_svr_fd=%d\n", delay_ms, to_svr_fd);
+			if(delay_ms > (int64_t)delay_limit_ms)
+			{
+				fprintf(stderr, "avg delay time=%ld>delay_limit=%d, next\n", delay_ms, delay_limit_ms);
+				close(to_svr_fd);
+				sleep(1);
+				delay_ms = 0;
+				count = 0;
+				if(find_count%10==0) 
+				{
+					fprintf(stderr, "cant find good delay ms, exit\n");
+					exit(0);
+				}
+				int to_svr_fd = socket(AF_INET, SOCK_DGRAM, 0);
+				SetNonBlock(to_svr_fd, true);
+			}
+			else
+			{
+				break;
+			}
 		}
-	}
-	fprintf(stderr, "avg delay time=%ld", delay_ms);
-	if(delay_ms > (int64_t)delay_limit_ms)
-	{
-		fprintf(stderr, "avg delay time=%ld>delay_limit=%d, exit\n", delay_ms, delay_limit_ms);
-		return 0;
 	}
 
 	//socket
@@ -678,7 +439,14 @@ int main(int argc, char *argv[])
 							                                             to_svr_lost_packet_percent, to_cli_lost_packet_percent,
 							                                             close_period_ms);
 						}
-						
+						//加上包的 ID
+						if(extra_send)
+						{
+							data += SetIndex(link->GetPacketIdIndex());
+							link->INCPacketIdIndex();
+							if(link->GetPacketIdIndex() >= MAX_PACKAGE_INDEX_ID) link->ReSetPacketIdIndex();
+						}
+
 						//加上索引
 						data += SetIndex(link->GetId());
 						//不是服务器，发向服务器的要加密
@@ -700,10 +468,25 @@ int main(int argc, char *argv[])
 						int id = GetIndex(id_str);
 						data.resize(data.length()-INDEX_SAVE_BYTE);
 						Link *link = LinkManager::GetInstance().FindById(id);
-						if(link)
+						if(!link) continue;
+						if(extra_send)
 						{
-							link->OnReceiveData(now_ms, false, data);
+							if((int)data.size() < INDEX_SAVE_BYTE) continue;
+							std::string index_str = data.substr(data.size()-INDEX_SAVE_BYTE, INDEX_SAVE_BYTE);
+							int index = GetIndex(index_str);
+							if(index < 0 || index >= MAX_PACKAGE_INDEX_ID)
+							{
+								fprintf(stderr, "to_svr=false, index=%d<0 || index >= MAX_PACKAGE_INDEX_ID=%d, continue\n", index, MAX_PACKAGE_INDEX_ID);
+								continue;
+							}
+							if(link->IsDuplicatePacket(index, now_ms))
+							{
+								//fprintf(stderr, "to_svr=false, _rev_packet_id_to_time find index=%d, IsDuplicatePacket, continue\n", index);
+								continue;
+							}
+							data.resize(data.length()-INDEX_SAVE_BYTE);
 						}
+						link->OnReceiveData(now_ms, false, data);
 					}
 					else
 					{
